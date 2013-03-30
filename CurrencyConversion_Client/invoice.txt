@@ -1,0 +1,8 @@
+Total revenue reported by the clients for the month of April 2013 in USD
+John,Brooklyn,1234.34
+Max,Clifton,1245.78
+Suzie,Bronx,3456.56
+Will Truman,Manhattan,12345.34
+Grace Adler,Manhattan,2345.45
+Gemma,StrattenI,1234.23
+Oscar,Queens,23456.34
