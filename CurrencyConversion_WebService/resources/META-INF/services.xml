@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<service name="CurrencyConversionService" scope="application"
+	targetNamespace="http://pulkitkarwal.CurrencyConversionService/">
+	<description>Currency Conversion Web Service</description>
+	<messageReceivers>
+		<messageReceiver mep="http://www.w3.org/2004/08/wsdl/in-only"
+			class="org.apache.axis2.rpc.receivers.RPCInOnlyMessageReceiver" />
+		<messageReceiver mep="http://www.w3.org/2004/08/wsdl/in-out"
+			class="org.apache.axis2.rpc.receivers.RPCMessageReceiver" />
+	</messageReceivers>
+	<schema schemaNamespace="http://pulkitkarwal.CurrencyConversionService/xsd" />
+	<parameter name="ServiceClass">converter.Converter</parameter>
+	<parameter name="load-on-startup">model.Rates</parameter>
+</service>
