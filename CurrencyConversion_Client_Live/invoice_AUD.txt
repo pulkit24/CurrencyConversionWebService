@@ -1,8 +1,0 @@
-Total revenue reported by the clients for the month of April 2013 in AUD
-John,Brooklyn,1184.596098
-Max,Clifton,1195.5750659999999
-Suzie,Bronx,3317.260632
-Will Truman,Manhattan,11847.822798
-Grace Adler,Manhattan,2250.9283649999998
-Gemma,StrattenI,1184.490531
-Oscar,Queens,22511.049498
