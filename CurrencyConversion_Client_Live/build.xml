@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="CurrencyConversionClientLive" basedir="." default="generate.client">
+    <property environment="env"/>
+    <property file="build.properties"/>
+    <path id="axis2.classpath">
+        <fileset dir="${axis2.home}/lib">
+            <include name="*.jar"/>
+        </fileset>
+    </path>
+    <target name="generate.client">
+        <java classname="org.apache.axis2.wsdl.WSDL2Java" classpathref="axis2.classpath">
+            <arg line="-uri ${wsdl.uri}"/>
+            <arg line="-s"/>
+            <arg line="-uw"/>
+            <arg line="-ns2p http://pulkitkarwal.CurrencyConversionService/xsd=pulkitkarwal.adb.xsd"/>
+            <arg line="-l java"/>
+            <arg line="-p client.adb"/>
+            <arg line="-d adb"/>
+        </java>
+    </target>
+</project>
