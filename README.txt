@@ -20,9 +20,9 @@ The service can be accessed by both SOAP and REST techniques (i.e. direct HTTP r
 
 Both SOAP and REST versions of the client program are provided. The REST client also generates encrypted versions of the output _invoice files_.
 
-3. Currency Converter Client Live – A version of the previous client program that connects to a live web service on [restfulwebservices.net](restfulwebservices.net/wcf/CurrencyService.svc?wsdl).
+3. Currency Converter Client Live – A version of the previous client program that connects to a live web service on [Cloanto.com](http://fx.cloanto.com/webservices/CloantoCurrencyServer.asmx?WSDL).
 
-Both SOAP and REST versions of the client program are provided. The REST client also generates encrypted versions of the output _invoice files_. However, since the chosen live service does not provided HTTP GET bindings, the REST client will not work yet. (Pardon me, but not other free web service exists within the Google-able Internet other than this, it seems. The one on [webservicex.net](www.webservicex.net/CurrencyConvertor.asmx?WSDL) seems to have crashed. Let me know if a better free currency conversion service is available.)
+Both SOAP and REST versions of the client program are provided. The REST client also generates encrypted versions of the output _invoice files_.
 
 Instructions for Execution
 -------------------------
