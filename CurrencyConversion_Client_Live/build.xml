@@ -12,7 +12,7 @@
             <arg line="-uri ${wsdl.uri}"/>
             <arg line="-s"/>
             <arg line="-uw"/>
-            <arg line="-ns2p http://pulkitkarwal.CurrencyConversionService/xsd=pulkitkarwal.adb.xsd"/>
+            <arg line="-ns2p http://webservices.cloanto.com/currencyserver=pulkitkarwal.client.adb.xsd"/>
             <arg line="-l java"/>
             <arg line="-p client.adb"/>
             <arg line="-d adb"/>

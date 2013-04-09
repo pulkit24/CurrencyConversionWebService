@@ -5,11 +5,11 @@ import java.util.NoSuchElementException;
 public class Converter {
 	/* Model for storing exchange rate info */
 	private String[] currencies = { "AUD", "USD", "EUR" }; // add as many as needed
-	private double[][] exchangeRates = { { 1, 10, 20 }, { 10, 1, 20 }, { 10, 20, 1 }, }; // 2x2 matrix of conversions
-																							// from Row to Column, must
-																							// match in size with the
-																							// number of currencies
-																							// above
+	private double[][] exchangeRates = { 
+			{ 	1, 			1.03863, 	0.79878 }
+			, { 0.96264, 	1, 			0.76904 }
+			, { 1.25165, 	1.30017, 	1 }
+			, }; // 2x2 matrix of from Row to Column, must match in size with the number of currencies above
 
 	/**
 	 * Returns the list of legal currencies. Useful when the client doesn't want to track the currencies itself.

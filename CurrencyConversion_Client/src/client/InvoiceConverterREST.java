@@ -5,9 +5,9 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.rmi.RemoteException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Properties;
 
 import org.jdom.Document;
@@ -16,13 +16,10 @@ import org.jdom.JDOMException;
 import org.jdom.input.SAXBuilder;
 import org.jdom.xpath.XPath;
 
-import client.debug.Debug;
 import client.invoice.Invoice;
+import client.utilities.Log;
 
 public class InvoiceConverterREST {
-	/* Full file name of the invoice file */
-	private String invoiceFile = null;
-
 	/* Legal currency names */
 	private String[] currencies = null;
 
@@ -33,44 +30,70 @@ public class InvoiceConverterREST {
 		/* Load configuration parameters */
 		Properties defaults = new Properties();
 		defaults.load(new FileInputStream("config.properties"));
-		String invoiceFileName = defaults.getProperty("invoice.file.name");	// file name of the invoice file
-		String invoiceFileExtension = defaults.getProperty("invoice.file.extension");	// file extension of the invoice file
-		boolean debugging = Boolean.parseBoolean(defaults.getProperty("debugging"));	// should debugging output be displayed?
-		String serviceURL = defaults.getProperty("service.url"); // url of the web service
+		String invoiceFileName = defaults.getProperty("invoice.file.name"); // file name of the invoice file
+		String invoiceFileExtension = defaults.getProperty("invoice.file.extension"); // file extension of the invoice file
+		String invoiceEncryptedFileSuffix = defaults.getProperty("invoice.file.encrypted.suffix"); // suffix to add to encrypted files'
+																									// names
+		boolean storeKeys = Boolean.parseBoolean(defaults.getProperty("invoice.file.encrypted.storeKey")); // should we save the encryption
+																											// keys in text files for later
+																											// decryption?
+		boolean debugging = Boolean.parseBoolean(defaults.getProperty("debugging")); // should debugging output be displayed?
+		String serviceURL = defaults.getProperty("service.url.rest"); // url of the REST web service
 
 		/* Set up debug mode */
-		Debug.DEBUGGING = debugging;
+		Log.DEBUGGING = debugging;
 
 		/* Load currency converter client */
 		InvoiceConverterREST converter = new InvoiceConverterREST(serviceURL);
+		String[] legalCurrencies = converter.getCurrencies();
 
-		/* Load invoice file and related properties */
-		String invoiceFile = invoiceFileName + "." + invoiceFileExtension;
-		Debug.log("InvoiceConverterREST.main.invoice.filename", invoiceFile);
-		Invoice invoice = new Invoice(invoiceFile);
-		invoice.populate(converter.getCurrencies());	// extract the currency and amounts
-
-		/* Get extracted info - source currency and amounts to be converted */
-		String sourceCurrency = invoice.getSourceCurrency();
-		Debug.log("InvoiceConverterREST.main.invoice.currency", sourceCurrency);
-		double[] sourceAmounts = invoice.getSourceAmounts();
-		Debug.log("InvoiceConverterREST.main.invoice.amounts", sourceAmounts);
-
-		/* Convert the invoice file into each of the other currencies */
-		for (String targetCurrency : converter.getCurrencies()) {
-			if (!sourceCurrency.equals(targetCurrency)) {	// skip the same currency of course!
-				/* Convert all the amounts into the target currency */
-				double[] convertedAmounts = converter.convertAmount(sourceCurrency, sourceAmounts, targetCurrency);
-
-				Debug.log("InvoiceConverterREST.main.invoice.converting to currency", targetCurrency);
-				Debug.log("InvoiceConverterREST.main.service.returned amounts", convertedAmounts);
-
-				/* Write the new invoice file + encrypted version on disk */
-				Invoice copyInvoice = invoice.generateCopyInvoice(targetCurrency, convertedAmounts);
-				copyInvoice.writeInvoice(invoiceFileName + "_" + targetCurrency + "." + invoiceFileExtension);
-				copyInvoice.writeEncryptedInvoice(invoiceFileName + "_" + targetCurrency + "_encrypted."
-						+ invoiceFileExtension);
+		try {
+			if (legalCurrencies == null) {
+				throw new NoSuchElementException();
 			}
+
+			/* Load invoice file and related properties */
+			String invoiceFile = invoiceFileName + "." + invoiceFileExtension;
+			if (args.length > 0)
+				invoiceFile = args[0]; // load file from argument if supplied
+			Log.debug("InvoiceConverterREST.main.invoice.filename", invoiceFile);
+			Invoice invoice = new Invoice(invoiceFile);
+			invoice.populate(legalCurrencies); // extract the currency and amounts
+
+			/* Get extracted info - source currency and amounts to be converted */
+			String sourceCurrency = invoice.getSourceCurrency();
+			Log.debug("InvoiceConverterREST.main.invoice.currency", sourceCurrency);
+			double[] sourceAmounts = invoice.getSourceAmounts();
+			Log.debug("InvoiceConverterREST.main.invoice.amounts", sourceAmounts);
+
+			/* Convert the invoice file into each of the other currencies */
+			Log.notify("Converting currencies...");
+			for (String targetCurrency : legalCurrencies) {
+				if (!sourceCurrency.equals(targetCurrency)) { // skip the same currency of course!
+					/* Convert all the amounts into the target currency */
+					double[] convertedAmounts = converter.convertAmount(sourceCurrency, sourceAmounts, targetCurrency);
+
+					Log.debug("InvoiceConverterREST.main.invoice.converting to currency", targetCurrency);
+					Log.debug("InvoiceConverterREST.main.service.returned amounts", convertedAmounts);
+
+					/* Write the new invoice file + encrypted version on disk */
+					String newFileName = invoiceFileName + "_" + targetCurrency + "." + invoiceFileExtension;
+					Log.notifyInProgress("Writing output to file " + newFileName);
+					Invoice copyInvoice = invoice.generateCopyInvoice(targetCurrency, convertedAmounts);
+					copyInvoice.writeInvoice(newFileName);
+					Log.notifyProgressComplete();
+
+					String newEncryptedFileName = invoiceFileName + "_" + targetCurrency + "_"
+							+ invoiceEncryptedFileSuffix + "." + invoiceFileExtension;
+					String keyStoreForEncryptedFileName = invoiceFileName + "_" + targetCurrency + "_"
+							+ invoiceEncryptedFileSuffix + "_key." + invoiceFileExtension;
+					Log.notifyInProgress("Writing output to file " + newEncryptedFileName);
+					copyInvoice.writeEncryptedInvoice(newEncryptedFileName, storeKeys, keyStoreForEncryptedFileName);
+					Log.notifyProgressComplete();
+				}
+			}
+		} catch (NoSuchElementException e) {
+			Log.error("Could not find a currency in the invoice file. Make sure it is in CAPITALS.", e);
 		}
 	}
 
@@ -79,12 +102,13 @@ public class InvoiceConverterREST {
 	 * Attempts to contact the web service and get a list of legal currencies to use.
 	 * 
 	 * @param serviceURL
-	 * String - URL to the WSDL descriptor file for the web service
+	 *            String - URL to the WSDL descriptor file for the web service
 	 */
 	public InvoiceConverterREST(String serviceURL) {
 		try {
 			/* Note web server URL */
 			this.serviceURL = serviceURL;
+			Log.notify("Connecting to web service at " + serviceURL);
 
 			/* Request a list of legal currencies */
 			URL webServiceURL = new URL(serviceURL + "/getCurrencies");
@@ -92,21 +116,21 @@ public class InvoiceConverterREST {
 
 			/* Read XML response */
 			XPath xpath = XPath.newInstance("/ns:getCurrenciesResponse/ns:return");
-			List<Element> responseItems = xpath.selectNodes(doc);
+			List<?> responseItems = xpath.selectNodes(doc);
 			ArrayList<String> currenciesRaw = new ArrayList<String>();
-			for (Element item : responseItems) {
-				currenciesRaw.add(item.getText());
+			for (Object item : responseItems) {
+				currenciesRaw.add(((Element) item).getText());
 			}
 			currencies = currenciesRaw.toArray(new String[1]);
 
-			Debug.log("InvoiceConverterREST.constructor.legal currencies", currencies);
+			Log.debug("InvoiceConverterREST.constructor.legal currencies", currencies);
 
 		} catch (MalformedURLException e) {
-			System.err.println("Service URL provided is invalid."+e);
+			Log.error("Service URL provided is invalid.", e);
 		} catch (JDOMException e) {
-			System.err.println("JDOM crashed or did not work."+e);
+			Log.error("JDOM crashed or did not work.", e);
 		} catch (IOException e) {
-			System.err.println("Could not connect to the web service."+e);
+			Log.error("Could not connect to the web service.", e);
 		}
 	}
 
@@ -116,13 +140,13 @@ public class InvoiceConverterREST {
 	 * service.
 	 * 
 	 * @param sourceCurrency
-	 * String - The 3-character ISO code identifying the currency of the supplied amounts
+	 *            String - The 3-character ISO code identifying the currency of the supplied amounts
 	 * @param sourceAmounts
-	 * double[] - Array of amounts to be converted
+	 *            double[] - Array of amounts to be converted
 	 * @param targetCurrency
-	 * String - The 3-character ISO code identifying the required target currency
+	 *            String - The 3-character ISO code identifying the required target currency
 	 * @return List of converted amounts
-	 * double[] - Array of amounts received from the web service after conversion to the target currency
+	 *         double[] - Array of amounts received from the web service after conversion to the target currency
 	 */
 	public double[] convertAmount(String sourceCurrency, double[] sourceAmounts, String targetCurrency) {
 		try {
@@ -146,11 +170,11 @@ public class InvoiceConverterREST {
 
 			return convertedAmounts;
 		} catch (MalformedURLException e) {
-			System.err.println("Service URL provided is invalid."+e);
+			Log.error("Service URL provided is invalid.", e);
 		} catch (JDOMException e) {
-			System.err.println("JDOM crashed or did not work."+e);
+			Log.error("JDOM crashed or did not work.", e);
 		} catch (IOException e) {
-			System.err.println("Could not connect to the web service." + e);
+			Log.error("Could not connect to the web service.", e);
 		}
 		return null;
 	}

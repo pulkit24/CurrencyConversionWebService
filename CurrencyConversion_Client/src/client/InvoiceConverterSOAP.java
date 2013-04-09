@@ -4,18 +4,16 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.rmi.RemoteException;
+import java.util.NoSuchElementException;
 import java.util.Properties;
 
 import org.apache.axis2.AxisFault;
 
 import client.adb.CurrencyConversionServiceStub;
-import client.debug.Debug;
 import client.invoice.Invoice;
+import client.utilities.Log;
 
 public class InvoiceConverterSOAP {
-	/* Full file name of the invoice file */
-	private String invoiceFile = null;
-
 	/* Legal currency names */
 	private String[] currencies = null;
 
@@ -29,39 +27,54 @@ public class InvoiceConverterSOAP {
 		String invoiceFileName = defaults.getProperty("invoice.file.name"); // file name of the invoice file
 		String invoiceFileExtension = defaults.getProperty("invoice.file.extension"); // file extension of the invoice file
 		boolean debugging = Boolean.parseBoolean(defaults.getProperty("debugging")); // should debugging output be displayed?
-		String serviceURL = defaults.getProperty("service.url"); // url of the web service
+		String serviceURL = defaults.getProperty("service.url.soap"); // url of the web service
 
 		/* Set up debug mode */
-		Debug.DEBUGGING = debugging;
+		Log.DEBUGGING = debugging;
 
 		/* Load currency converter client */
 		InvoiceConverterSOAP converter = new InvoiceConverterSOAP(serviceURL);
+		String[] legalCurrencies = converter.getCurrencies();
 
-		/* Load invoice file and related properties */
-		String invoiceFile = invoiceFileName + "." + invoiceFileExtension;
-		Debug.log("InvoiceConverterSOAP.main.invoice.filename", invoiceFile);
-		Invoice invoice = new Invoice(invoiceFile);
-		invoice.populate(converter.getCurrencies()); // extract the currency and amounts
-
-		/* Get extracted info - source currency and amounts to be converted */
-		String sourceCurrency = invoice.getSourceCurrency();
-		Debug.log("InvoiceConverterSOAP.main.invoice.currency", sourceCurrency);
-		double[] sourceAmounts = invoice.getSourceAmounts();
-		Debug.log("InvoiceConverterSOAP.main.invoice.amounts", sourceAmounts);
-
-		/* Convert the invoice file into each of the other currencies */
-		for (String targetCurrency : converter.getCurrencies()) {
-			if (!sourceCurrency.equals(targetCurrency)) { // skip the same currency of course!
-				/* Convert all the amounts into the target currency */
-				double[] convertedAmounts = converter.convertAmount(sourceCurrency, sourceAmounts, targetCurrency);
-
-				Debug.log("InvoiceConverterSOAP.main.invoice.converting to currency", targetCurrency);
-				Debug.log("InvoiceConverterSOAP.main.service.returned amounts", convertedAmounts);
-
-				/* Write the new invoice file on disk */
-				Invoice copyInvoice = invoice.generateCopyInvoice(targetCurrency, convertedAmounts);
-				copyInvoice.writeInvoice(invoiceFileName + "_" + targetCurrency + "." + invoiceFileExtension);
+		try {
+			if (legalCurrencies == null) {
+				throw new NoSuchElementException();
 			}
+
+			/* Load invoice file and related properties */
+			String invoiceFile = invoiceFileName + "." + invoiceFileExtension;
+			if (args.length > 0)
+				invoiceFile = args[0]; // load file from argument if supplied
+			Log.debug("InvoiceConverterSOAP.main.invoice.filename", invoiceFile);
+			Invoice invoice = new Invoice(invoiceFile);
+			invoice.populate(legalCurrencies); // extract the currency and amounts
+
+			/* Get extracted info - source currency and amounts to be converted */
+			String sourceCurrency = invoice.getSourceCurrency();
+			Log.debug("InvoiceConverterSOAP.main.invoice.currency", sourceCurrency);
+			double[] sourceAmounts = invoice.getSourceAmounts();
+			Log.debug("InvoiceConverterSOAP.main.invoice.amounts", sourceAmounts);
+
+			/* Convert the invoice file into each of the other currencies */
+			Log.notify("Converting currencies...");
+			for (String targetCurrency : legalCurrencies) {
+				if (!sourceCurrency.equals(targetCurrency)) { // skip the same currency of course!
+					/* Convert all the amounts into the target currency */
+					double[] convertedAmounts = converter.convertAmount(sourceCurrency, sourceAmounts, targetCurrency);
+
+					Log.debug("InvoiceConverterSOAP.main.invoice.converting to currency", targetCurrency);
+					Log.debug("InvoiceConverterSOAP.main.service.returned amounts", convertedAmounts);
+
+					/* Write the new invoice file on disk */
+					String newFileName = invoiceFileName + "_" + targetCurrency + "." + invoiceFileExtension;
+					Log.notifyInProgress("Writing output to file " + newFileName);
+					Invoice copyInvoice = invoice.generateCopyInvoice(targetCurrency, convertedAmounts);
+					copyInvoice.writeInvoice(newFileName);
+					Log.notifyProgressComplete();
+				}
+			}
+		} catch (NoSuchElementException e) {
+			Log.error("Could not find a currency in the invoice file. Make sure it is in CAPITALS.", e);
 		}
 	}
 
@@ -76,22 +89,22 @@ public class InvoiceConverterSOAP {
 		/* Contact web server */
 		try {
 			currencyConversionService = new CurrencyConversionServiceStub(serviceURL);
-			Debug.log("InvoiceConverterSOAP.constructor.connected to service", serviceURL);
+			Log.notify("Connecting to web service at " + serviceURL);
+			Log.debug("InvoiceConverterSOAP.constructor.connected to service", serviceURL);
 
 			/* Get the list of legal currencies */
 			currencies = currencyConversionService.getCurrencies();
-			Debug.log("InvoiceConverterSOAP.constructor.legal currencies", currencies);
+			Log.debug("InvoiceConverterSOAP.constructor.legal currencies", currencies);
 
 		} catch (AxisFault e1) {
-			System.err
-					.println("Client's knowledge of the service is faulty. Probably an Axis fault. Rebuild the client stub."
-							+ e1);
+			Log.error(
+					"Could not connect to the server. Is the server running? Or, the client's knowledge of the service is faulty. Probably an Axis fault. Rebuild the client stub.",
+					e1);
 		} catch (RemoteException e) {
-			System.err
-					.println("Could not connect to the web service. Perhaps the server threw an exception of its own?"
-							+ e);
+			Log.error(
+					"Could not connect to the web service. Perhaps the service is down or threw an exception of its own?",
+					e);
 		}
-
 	}
 
 	/**
@@ -113,9 +126,7 @@ public class InvoiceConverterSOAP {
 			/* Ask the service to convert the entire list of source amounts */
 			return currencyConversionService.convertAllToOneCurrency(sourceCurrency, sourceAmounts, targetCurrency);
 		} catch (RemoteException e) {
-			System.err
-					.println("Could not connect to the web service. Perhaps the server threw an exception of its own?"
-							+ e);
+			Log.error("Could not connect to the web service. Perhaps the server threw an exception of its own?", e);
 		}
 		return null;
 	}

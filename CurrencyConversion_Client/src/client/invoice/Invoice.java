@@ -7,6 +7,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.ObjectOutputStream;
+import java.math.BigDecimal;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -22,7 +23,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.DESKeySpec;
 
-import client.debug.Debug;
+import client.utilities.Log;
 
 /**
  * Handles all operations of the Invoice file.
@@ -39,6 +40,10 @@ public class Invoice {
 	private String sourceCurrency = null; // extracted from the first line (directive)
 	private ArrayList<Double> sourceAmounts = new ArrayList<Double>(); // extracted from the record lines
 
+	/* One-time-generated Encryption key */
+	private DESKeySpec decryptionKey = null; // using DES encryption algorithm
+	private SecretKey encryptionKey = null; // for use as encryption cipher
+
 	/**
 	 * Loads up the invoice file. Reads the invoice from the supplied filename and stores the directive and records. Note: this does not
 	 * being identifying the source currency or the amounts: call populate() for that.
@@ -53,7 +58,7 @@ public class Invoice {
 
 			/* First line is the directive */
 			directive = br.readLine();
-			Debug.log("Invoice.constructor by file.read directive", directive);
+			Log.debug("Invoice.constructor by file.read directive", directive);
 
 			/* Rest of the lines are records */
 			records = new ArrayList<String>();
@@ -61,13 +66,14 @@ public class Invoice {
 			while (record != null) {
 				records.add(record);
 				record = br.readLine();
-				Debug.log("Invoice.constructor by file.read record", record);
+				Log.debug("Invoice.constructor by file.read record", record);
 			}
 
+			br.close();
 		} catch (FileNotFoundException e) {
-			System.err.println("File " + e + filename + " not found.");
+			Log.error("File " + filename + " not found.", e);
 		} catch (IOException e) {
-			System.err.println("Could not read properties from build.properties file." + e);
+			Log.error("Could not read properties from build.properties file.", e);
 		}
 	}
 
@@ -96,13 +102,15 @@ public class Invoice {
 	 */
 	private String identifyCurrency(String[] currencies) {
 		/* Search the string for a mention of a currency */
-		for (String currency : currencies) {
-			if (directive.contains(currency))
-				return currency;
-			// TODO check for more than one mention
+		if (currencies != null) {
+			for (String currency : currencies) {
+				if (directive.contains(currency))
+					return currency;
+				// TODO check for more than one mention
+			}
 		}
 		/* No match found - either the list of currencies is incomplete or the invoice file is badly written */
-		throw new NoSuchElementException("Could not find a currency in the invoice file. Make sure it is in CAPITALS.");
+		throw new NoSuchElementException();
 	}
 
 	/**
@@ -179,8 +187,8 @@ public class Invoice {
 		/* Generate new directive by replacing the currency name */
 		String newDirective = directive.replaceAll(sourceCurrency, newCurrency);
 
-		Debug.log("Invoice.generateCopyInvoice.original directive", directive);
-		Debug.log("Invoice.generateCopyInvoice.new directive", newDirective);
+		Log.debug("Invoice.generateCopyInvoice.original directive", directive);
+		Log.debug("Invoice.generateCopyInvoice.new directive", newDirective);
 
 		/* Generate new records */
 		ArrayList<String> newRecords = new ArrayList<String>();
@@ -188,12 +196,16 @@ public class Invoice {
 			String record = records.get(i);
 			Double sourceAmount = sourceAmounts.get(i);
 			Double newAmount = newAmounts[i];
+			
+			/* Round off to 2 significant digits beyond the decimal point */
+			String roundedAmount = BigDecimal.valueOf(newAmount.doubleValue()).setScale(2, BigDecimal.ROUND_HALF_UP).toPlainString();
+			
 			/* Replace the old amount with the new converted amount */
-			String newRecord = record.replace(sourceAmount.toString(), newAmount.toString());
+			String newRecord = record.replace(sourceAmount.toString(), roundedAmount);
 			newRecords.add(newRecord);
 
-			Debug.log("Invoice.generateCopyInvoice.original record", record);
-			Debug.log("Invoice.generateCopyInvoice.original record", newRecord);
+			Log.debug("Invoice.generateCopyInvoice.original record", record);
+			Log.debug("Invoice.generateCopyInvoice.original record", newRecord);
 		}
 
 		/* Create and return the new Invoice object */
@@ -225,9 +237,9 @@ public class Invoice {
 			fout.close();
 
 		} catch (FileNotFoundException e) {
-			System.err.println("Could not create/write to the file." + e);
+			Log.error("Could not create/write to the file.", e);
 		} catch (IOException e) {
-			System.err.println("Could not write to the file." + e);
+			Log.error("Could not write to the file.", e);
 		}
 	}
 
@@ -237,24 +249,26 @@ public class Invoice {
 	 * 
 	 * @param filename
 	 *            String - Name of the file to be written to. Note: existing files will be overwritten.
+	 * @param storeKeys
+	 *            boolean - Whether or not to store the decryption keys in files. The next parameter will define the name of the key file if yes.
+	 * @param keyStoreFilename
+	 *            String - Name of the file in which to write the decryption key. Leave blank to avoid.
 	 */
-	public void writeEncryptedInvoice(String filename) {
+	public void writeEncryptedInvoice(String filename, boolean storeKeys, String keyStoreFilename) {
 		try {
-			/* Generate encryption key for using DES algorithm */
-			KeyGenerator keyGenerator = KeyGenerator.getInstance("DES");
-			keyGenerator.init(new SecureRandom());
-			SecretKey secretKey = keyGenerator.generateKey();
-			SecretKeyFactory secretKeyForDESCreator = SecretKeyFactory.getInstance("DES");
-			Class keySpecsDESClass = Class.forName("javax.crypto.spec.DESKeySpec");
-			DESKeySpec keySpecsDES = (DESKeySpec) secretKeyForDESCreator.getKeySpec(secretKey, keySpecsDESClass);
-
-			/* Write generator key as an object into a file */
-			ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream("encryption_key.txt"));
-			oos.writeObject(keySpecsDES.getKey());
+			/* Generate encryption key for using DES algorithm the first time */
+			if (decryptionKey == null) {
+				KeyGenerator keyGenerator = KeyGenerator.getInstance("DES");
+				keyGenerator.init(new SecureRandom());
+				encryptionKey = keyGenerator.generateKey();
+				SecretKeyFactory secretKeyForDESCreator = SecretKeyFactory.getInstance("DES");
+				Class<?> keySpecsDESClass = Class.forName("javax.crypto.spec.DESKeySpec");
+				decryptionKey = (DESKeySpec) secretKeyForDESCreator.getKeySpec(encryptionKey, keySpecsDESClass);
+			}
 
 			/* Wrap a cipher printer over a regular file output stream */
 			Cipher cipher = Cipher.getInstance("DES/CFB8/NoPadding");
-			cipher.init(Cipher.ENCRYPT_MODE, secretKey);
+			cipher.init(Cipher.ENCRYPT_MODE, encryptionKey);
 			CipherOutputStream cos = new CipherOutputStream(new FileOutputStream(filename), cipher);
 
 			/* Write to file */
@@ -267,23 +281,29 @@ public class Invoice {
 
 			/* Close all */
 			cos.close();
-			oos.writeObject(cipher.getIV());
-			oos.close();
+
+			/* Write generator key as an object into a file */
+			if (storeKeys && (keyStoreFilename != null && !"".equals(keyStoreFilename))) {
+				ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(keyStoreFilename));
+				oos.writeObject(decryptionKey.getKey());
+				oos.writeObject(cipher.getIV());
+				oos.close();
+			}
 
 		} catch (NoSuchAlgorithmException e) {
-			System.err.println("DES algorithm for key generation not found." + e);
+			Log.error("DES algorithm for key generation not found.", e);
 		} catch (ClassNotFoundException e) {
-			System.err.println("Javax DESKeySpec class not found!" + e);
+			Log.error("Javax DESKeySpec class not found!", e);
 		} catch (InvalidKeySpecException e) {
-			System.err.println("DES key spec is invalid." + e);
+			Log.error("DES key spec is invalid.", e);
 		} catch (FileNotFoundException e) {
-			System.err.println("Key file could not be created." + e);
+			Log.error("Key file could not be created.", e);
 		} catch (IOException e) {
-			System.err.println("Key file could not be opened for writing." + e);
+			Log.error("Key file could not be opened for writing.", e);
 		} catch (NoSuchPaddingException e) {
-			System.err.println("Cipher could not instantiate." + e);
+			Log.error("Cipher could not instantiate.", e);
 		} catch (InvalidKeyException e) {
-			System.err.println("Cipher was given an invalid encryption key." + e);
+			Log.error("Cipher was given an invalid encryption key.", e);
 		}
 	}
 }
